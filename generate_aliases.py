@@ -44,38 +44,71 @@ def main():
         ('g', 'get', None, None),
         ('d', 'describe', None, None),
         ('rm', 'delete', None, None),
-        ('run', 'run --rm --restart=Never --image-pull-policy=IfNotPresent -i -t', None, None),
+        ('run',
+         'run --rm --restart=Never --image-pull-policy=IfNotPresent -i -t',
+         None,
+         None),
+        ('rohis', 'rollout history', None, None),
+        ('rop', 'rollout pause', None, None),
+        ('rore', 'rollout restart', None, None),
+        ('rorsm', 'rollout resume', None, None),
+        ('rost', 'rollout status', None, None),
+        ('roun', 'rollout undo', None, None),
         ]
+    rollout_commands = ['rohis', 'rop', 'rore', 'rorsm', 'rost', 'roun']
 
     res = [
         ('po', 'pods', ['g', 'd', 'rm'], None),
-        ('dep', 'deployment', ['g', 'd', 'rm'], None),
-        ('sts', 'statefulset', ['g', 'd', 'rm'], None),
+        ('dep', 'deployment', ['g', 'd', 'rm'] + rollout_commands, None),
+        ('sts', 'statefulset', ['g', 'd', 'rm'] + rollout_commands, None),
+        ('ds', 'daemonset', ['g', 'd', 'rm'] + rollout_commands, None),
+        ('rs', 'replicaset', ['g', 'd', 'rm'], None),
         ('svc', 'service', ['g', 'd', 'rm'], None),
         ('ing', 'ingress', ['g', 'd', 'rm'], None),
         ('cm', 'configmap', ['g', 'd', 'rm'], None),
         ('sec', 'secret', ['g', 'd', 'rm'], None),
         ('no', 'nodes', ['g', 'd'], ['sys']),
         ('ns', 'namespaces', ['g', 'd', 'rm'], ['sys']),
+        ('j', 'jobs', ['g', 'd', 'rm'], None),
+        ('pv', 'pv', ['g', 'd', 'rm'], None),
+        ('pvc', 'pvc', ['g', 'd', 'rm'], None),
         ]
     res_types = [r[0] for r in res]
 
     args = [
-        ('oyaml', '-o=yaml', ['g'], ['owide', 'ojson', 'sl']),
+        ('oyaml',
+         '-o=yaml',
+         ['g', 'rohis', 'rop', 'rore', 'rorsm', 'roun'],
+         ['owide', 'ojson', 'sl']),
         ('owide', '-o=wide', ['g'], ['oyaml', 'ojson']),
-        ('ojson', '-o=json', ['g'], ['owide', 'oyaml', 'sl']),
+        ('ojson',
+         '-o=json',
+         ['g', 'rohis', 'rop', 'rore', 'rorsm', 'roun'],
+         ['owide', 'oyaml', 'sl']),
         ('all', '--all-namespaces', ['g', 'd'], ['rm', 'f', 'no', 'sys']),
+        # This 'A' allows for redundant kgpoallA but that is allowed in kubectl
+        # This is the easiest way to allow both kgpoA and krmpoallA
+        ('A', '--all-namespaces', ['g', 'd', 'rm'], ['f', 'no', 'sys']),
         ('sl', '--show-labels', ['g'], ['oyaml', 'ojson'], None),
-        ('all', '--all', ['rm'], None), # caution: reusing the alias
-        ('w', '--watch', ['g'], ['oyaml', 'ojson', 'owide']),
+        ('all', '--all', ['rm'], None),
+        ('w', '--watch', ['g', 'rost'], ['oyaml', 'ojson', 'owide']),
         ]
 
     # these accept a value, so they need to be at the end and
     # mutually exclusive within each other.
-    positional_args = [('f', '--recursive -f', ['g', 'd', 'rm'], res_types + ['all'
-                       , 'l', 'sys']), ('l', '-l', ['g', 'd', 'rm'], ['f',
-                       'all']), ('n', '--namespace', ['g', 'd', 'rm',
-                       'lo', 'ex', 'pf'], ['ns', 'no', 'sys', 'all'])]
+    positional_args = [
+        ('f',
+         '--recursive -f',
+         ['g', 'd', 'rm'],
+         res_types + ['all', 'A', 'l', 'sys']),
+        # caution: reusing the alias
+        ('f', '--recursive -f', rollout_commands, ['all', 'A', 'l', 'sys']),
+        ('l', '-l', ['g', 'd', 'rm'] + rollout_commands, ['f', 'all']),
+        ('n',
+         '--namespace',
+         ['g', 'd', 'rm', 'lo', 'ex', 'pf'] + rollout_commands,
+         ['ns', 'no', 'sys', 'all', 'A'])
+        ]
 
     # [(part, optional, take_exactly_one)]
     parts = [
@@ -93,33 +126,38 @@ def main():
         "fish": "abbr --add {} \"{}\"",
     }
 
-    shell = sys.argv[1] if len(sys.argv) > 1 else "bash"
-    if shell not in shellFormatting:
-        raise ValueError("Shell \"{}\" not supported. Options are {}"
-                        .format(shell, [key for key in shellFormatting]))
+    for shell in ["bash", "fish"]:
+        if shell not in shellFormatting:
+            raise ValueError("Shell \"{}\" not supported. Options are {}"
+                            .format(shell, [key for key in shellFormatting]))
 
-    out = gen(parts)
+        out = gen(parts)
 
-    # prepare output
-    if not sys.stdout.isatty():
-        header_path = \
-            os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                         'license_header')
-        with open(header_path, 'r') as f:
-            print(f.read())
+        # prepare output
+        if not sys.stdout.isatty():
+            header_path = \
+                os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                             'license_header')
+            with open(header_path, 'r') as f:
+                print(f.read())
 
-    seen_aliases = set()
+        seen_aliases = set()
 
-    for cmd in out:
-        alias = ''.join([a[0] for a in cmd])
-        command = ' '.join([a[1] for a in cmd])
+        if shell == "bash":
+            out_file = open(".kubectl_aliases", 'w')
+        else:
+            out_file = open(".kubectl_aliases.fish", 'w')
+        for cmd in out:
+            alias = ''.join([a[0] for a in cmd])
+            command = ' '.join([a[1] for a in cmd])
 
-        if alias in seen_aliases:
-            print("Alias conflict detected: {}".format(alias), file=sys.stderr)
+            if alias in seen_aliases:
+                print("Alias conflict detected: {}".format(alias), file=sys.stderr)
 
-        seen_aliases.add(alias)
+            seen_aliases.add(alias)
 
-        print(shellFormatting[shell].format(alias, command))
+            print(shellFormatting[shell].format(alias, command))
+            out_file.write(shellFormatting[shell].format(alias, command)+'\n')
 
 
 def gen(parts):
